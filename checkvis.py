@@ -8,7 +8,6 @@ token_path = "bot-token.txt"
 try:
     with open(token_path, 'r') as file:
         BOT_TOKEN = file.readline().strip()
-        print(BOT_TOKEN)
 except FileNotFoundError:
     print(f"The file '{token_path}' does not exist.")
 except Exception as e:
