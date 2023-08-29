@@ -2,9 +2,12 @@ from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 import requests
 from bs4 import BeautifulSoup
+import os
 
+# Get the absolute path of the directory containing the script
+script_directory = os.path.dirname(os.path.abspath(__file__))
+token_path = os.path.join(script_directory, "bot-token.txt")
 
-token_path = "bot-token.txt"
 try:
     with open(token_path, 'r') as file:
         BOT_TOKEN = file.readline().strip()
