@@ -1,23 +1,29 @@
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
-import requests
-from bs4 import BeautifulSoup
 import os
 import sqlite3
+import logging
+import requests
+from bs4 import BeautifulSoup
 
-# Get the absolute path of the directory containing the script
-script_directory = os.path.dirname(os.path.abspath(__file__))
-token_path = os.path.join(script_directory, "bot-token.txt")
-db_path = os.path.join(script_directory, "data.db")
+# Constants
+SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+TOKEN_PATH = os.path.join(SCRIPT_DIRECTORY, "bot-token.txt")
+DB_PATH = os.path.join(SCRIPT_DIRECTORY, "data.db")
 
-try:
-    with open(token_path, 'r') as file:
-        BOT_TOKEN = file.readline().strip()
-except FileNotFoundError:
-    print(f"The file '{token_path}' does not exist.")
-except Exception as e:
-    print("An error occurred:", str(e))
+# Configure logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+def get_bot_token():
+    try:
+        with open(TOKEN_PATH, 'r') as file:
+            return file.readline().strip()
+    except FileNotFoundError:
+        logger.error(f"The file '{TOKEN_PATH}' does not exist.")
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}")
+    return None
 
 def start(update: Update, context: CallbackContext) -> None:
     update.message.reply_text("Welcome to the Case Analysis Bot! Please send me a case number.")
@@ -25,20 +31,18 @@ def start(update: Update, context: CallbackContext) -> None:
 def analyze_case(case_number: int) -> str:
     url = f"https://infovisa.ibz.be/ResultNl.aspx?place=THR&visumnr={case_number}"
     
-    response = requests.get(url)
-    if response.status_code != 200:
-        analysis_result = "Error retrieving state from DVZ."
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, 'html.parser')
 
-    soup = BeautifulSoup(response.content, 'html.parser')
+        dossiernr_element = soup.find(id="dossiernr")
 
-    # Check if the "dossiernr" element exists
-    dossiernr_element = soup.find(id="dossiernr")
+        if dossiernr_element:
+            return f"{case_number}: Your search returned no result in DVZ database."
 
-    if dossiernr_element:
-        analysis_result = f"{case_number}: Your search returned no result in DVZ database."
-    else:
-        # Extract table data if it exists
         table = soup.find('table')
+
         if table:
             table_text = "\n"
             for row in table.find_all('tr'):
@@ -46,13 +50,12 @@ def analyze_case(case_number: int) -> str:
                 row_text = f'*{cells[0].get_text(strip=True)}*'
                 row_text += (f'\n_{cells[1].get_text(strip=True)}_' if cells[1].get_text(strip=True) else "")
                 table_text += row_text + '\n'
-            analysis_result = f'{table_text}'
+            return table_text
         else:
-            # No table found on the page!
-            analysis_result = f"{case_number}: Error."
-
-    return analysis_result
-
+            return f"{case_number}: Error."
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error retrieving data from DVZ: {str(e)}")
+        return "Error retrieving data from DVZ."
 
 def define(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
@@ -64,24 +67,30 @@ def define(update: Update, context: CallbackContext) -> None:
 
     word, case_number = args[0], args[1]
 
-    # Insert the association into the database (replace if it already exists)
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO user_commands (user_id, word, case_number) VALUES (?, ?, ?)", (user_id, word, case_number))
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO user_commands (user_id, word, case_number) VALUES (?, ?, ?)", (user_id, word, case_number))
+        conn.commit()
+    except sqlite3.Error as e:
+        logger.error(f"SQLite error: {str(e)}")
+    finally:
+        conn.close()
 
     update.message.reply_text(f"Defined: {word} => {case_number}")
-
 
 def get_association(update: Update, word: str) -> None:
     user_id = update.message.from_user.id
 
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT case_number FROM user_commands WHERE user_id = ? AND word = ?", (user_id, word))
-    result = cursor.fetchone()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT case_number FROM user_commands WHERE user_id = ? AND word = ?", (user_id, word))
+        result = cursor.fetchone()
+    except sqlite3.Error as e:
+        logger.error(f"SQLite error: {str(e)}")
+    finally:
+        conn.close()
 
     if result:
         case_number = result[0]
@@ -92,7 +101,6 @@ def get_association(update: Update, word: str) -> None:
 def check_message(update: Update, context: CallbackContext) -> None:
     msg_text = update.message.text.strip()
 
-    # Check if the entered message is a valid number
     if msg_text.isdigit():
         analysis_result = analyze_case(msg_text)
         update.message.reply_text(analysis_result, parse_mode="Markdown")
@@ -100,7 +108,12 @@ def check_message(update: Update, context: CallbackContext) -> None:
         get_association(update=update, word=msg_text)
 
 def main():
-    updater = Updater(BOT_TOKEN, use_context=True)
+    bot_token = get_bot_token()
+    if not bot_token:
+        logger.error("Bot token not found. Exiting.")
+        return
+
+    updater = Updater(bot_token, use_context=True)
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start))
