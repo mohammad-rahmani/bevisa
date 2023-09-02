@@ -15,6 +15,37 @@ DB_PATH = os.path.join(SCRIPT_DIRECTORY, "data.db")
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def write_to_db(user_id: int, word: str, case_number: str) -> bool:
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO user_commands (user_id, word, case_number) VALUES (?, ?, ?)", (user_id, word, case_number))
+        conn.commit()
+        success = True
+    except sqlite3.Error as e:
+        logger.error(f"SQLite error: {str(e)}")
+        success = False
+    finally:
+        conn.close()
+    
+    return success
+
+def read_from_db(user_id: int, word: str) -> str:
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT case_number FROM user_commands WHERE user_id = ? AND word = ?", (user_id, word))
+        result = cursor.fetchone()
+    except sqlite3.Error as e:
+        logger.error(f"SQLite error: {str(e)}")
+    finally:
+        conn.close()
+
+    if result:
+        return result[0]
+    else:
+        return ""
+
 def get_bot_token():
     try:
         with open(TOKEN_PATH, 'r') as file:
@@ -61,39 +92,31 @@ def define(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
     args = context.args
 
+    # Check usage
     if len(args) != 2:
         update.message.reply_text("Usage: /define <word> <case_number>")
         return
 
     word, case_number = args[0], args[1]
 
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("INSERT OR REPLACE INTO user_commands (user_id, word, case_number) VALUES (?, ?, ?)", (user_id, word, case_number))
-        conn.commit()
-    except sqlite3.Error as e:
-        logger.error(f"SQLite error: {str(e)}")
-    finally:
-        conn.close()
+    # Check if the word starts with an alphabetic character
+    if not word[0].isalpha():
+        update.message.reply_text("The word should start with an alphabetic character.")
+        return
 
-    update.message.reply_text(f"Defined: {word} => {case_number}")
+    # Check if case_number contains only digits
+    if not case_number.isdigit():
+        update.message.reply_text("The case number should contain only digits.")
+        return
+
+    if write_to_db(user_id, word, case_number):
+        update.message.reply_text(f"Learned: {word} => {case_number}")
 
 def get_association(update: Update, word: str) -> None:
     user_id = update.message.from_user.id
+    case_number = read_from_db(user_id, word)
 
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT case_number FROM user_commands WHERE user_id = ? AND word = ?", (user_id, word))
-        result = cursor.fetchone()
-    except sqlite3.Error as e:
-        logger.error(f"SQLite error: {str(e)}")
-    finally:
-        conn.close()
-
-    if result:
-        case_number = result[0]
+    if case_number:
         update.message.reply_text(f"The case number for '{word}' is: {case_number}")
     else:
         update.message.reply_text(f"No association found for '{word}'")
