@@ -5,6 +5,8 @@ import sqlite3
 import logging
 import requests
 from bs4 import BeautifulSoup
+import random
+import time
 
 # Constants
 SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -45,6 +47,20 @@ def read_from_db(user_id: int, word: str) -> str:
         return result[0]
     else:
         return ""
+
+def get_user_word_case_pairs(user_id: int) -> dict:
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT word, case_number FROM user_commands WHERE user_id = ?", (user_id,))
+        results = cursor.fetchall()
+    except sqlite3.Error as e:
+        logger.error(f"SQLite error: {str(e)}")
+        results = []
+    finally:
+        conn.close()
+
+    return results
 
 def get_bot_token():
     try:
@@ -120,6 +136,18 @@ def define(update: Update, context: CallbackContext) -> None:
     if write_to_db(user_id, word, case_number):
         update.message.reply_text(f"Learned: {word} => {case_number}")
 
+def retrieve_all_states(update: Update, context: CallbackContext) -> None:
+    user_id = update.message.from_user.id
+    cases = get_user_word_case_pairs(user_id)
+
+    for row in cases:
+        word, case_number = row
+        if case_number:
+            short_result, long_result = analyze_case(case_number)
+            short_result = f'{word} ({case_number})\n{short_result}'
+            update.message.reply_text(short_result, parse_mode="Markdown")
+            time.sleep(random.uniform(0.2, 1.2))
+
 def get_association(update: Update, word: str) -> None:
     user_id = update.message.from_user.id
     case_number = read_from_db(user_id, word)
@@ -154,6 +182,8 @@ def main():
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("define", define, pass_args=True))
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, check_message))
+
+    dp.add_handler(CommandHandler("all", retrieve_all_states))
 
     updater.start_polling()
     updater.idle()
