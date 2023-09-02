@@ -117,7 +117,9 @@ def get_association(update: Update, word: str) -> None:
     case_number = read_from_db(user_id, word)
 
     if case_number:
-        update.message.reply_text(f"The case number for '{word}' is: {case_number}")
+        update.message.reply_text(f"Checking latest information for '{word}' ({case_number})")
+        result = analyze_case(case_number)
+        update.message.reply_text(result, parse_mode="Markdown")
     else:
         update.message.reply_text(f"No association found for '{word}'")
 
