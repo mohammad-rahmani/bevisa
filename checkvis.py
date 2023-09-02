@@ -48,6 +48,22 @@ def read_from_db(user_id: int, word: str) -> str:
     else:
         return ""
 
+def remove_from_db(user_id: int, word: str) -> bool:
+    # Remove the word from the database
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM user_commands WHERE user_id = ? AND word = ?", (user_id, word))
+        conn.commit()
+        success = True
+    except sqlite3.Error as e:
+        logger.error(f"SQLite error: {str(e)}")
+        success = False
+    finally:
+        conn.close()
+
+    return success
+
 def get_user_word_case_pairs(user_id: int) -> dict:
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -136,6 +152,33 @@ def define(update: Update, context: CallbackContext) -> None:
     if write_to_db(user_id, word, case_number):
         update.message.reply_text(f"Learned: {word} => {case_number}")
 
+def remove(update: Update, context: CallbackContext) -> None:
+    user_id = update.message.from_user.id
+    args = context.args
+
+    # Check usage
+    if len(args) != 1:
+        update.message.reply_text("Usage: /remove <word>")
+        return
+
+    word_to_remove = args[0]
+
+    # Check if the word starts with an alphabetic character
+    if not word_to_remove[0].isalpha():
+        update.message.reply_text("The word should start with an alphabetic character.")
+        return
+
+    # Check if the word exists in the database for the user
+    current_word = read_from_db(user_id, word_to_remove)
+
+    if current_word:
+        if remove_from_db(user_id, word_to_remove):
+            update.message.reply_text(f"'{word_to_remove}' was removed from your dictionary.")
+        else:
+            update.message.reply_text(f"Could not remove '{word_to_remove}' from your dictionary.")
+    else:
+        update.message.reply_text(f"'{word_to_remove}' was not found in your dictionary.")
+
 def retrieve_all_states(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
     cases = get_user_word_case_pairs(user_id)
@@ -181,9 +224,9 @@ def main():
 
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("define", define, pass_args=True))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, check_message))
-
+    dp.add_handler(CommandHandler("remove", remove, pass_args=True))
     dp.add_handler(CommandHandler("all", retrieve_all_states))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, check_message))
 
     updater.start_polling()
     updater.idle()
