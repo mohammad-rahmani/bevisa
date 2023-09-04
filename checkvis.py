@@ -90,7 +90,7 @@ def get_bot_token():
     return None
 
 def start(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text("Welcome to the Case Analysis Bot! Please send me a case number.")
+    update.message.reply_text("Welcome to the Belgian Visa Check bot! Please send me a case number or use commands from the menu.")
 
 def analyze_case(case_number: int) -> (str, str):
     url = f"https://infovisa.ibz.be/ResultNl.aspx?place=THR&visumnr={case_number}"
@@ -105,7 +105,7 @@ def analyze_case(case_number: int) -> (str, str):
     soup = BeautifulSoup(response.content, 'html.parser')
     dossiernr_element = soup.find(id="dossiernr")
     if dossiernr_element:
-        return f"{case_number}: Your search returned no result in DVZ database.", ""
+        return f"Your search returned no result in DVZ database.", ""
 
     table = soup.find('table')
     if not table:
