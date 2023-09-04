@@ -12,6 +12,7 @@ import time
 SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 TOKEN_PATH = os.path.join(SCRIPT_DIRECTORY, "bot-token.txt")
 DB_PATH = os.path.join(SCRIPT_DIRECTORY, "data.db")
+MAX_CASES = 4
 
 # Configure logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -129,7 +130,6 @@ def analyze_case(case_number: int) -> (str, str):
     return short_answer, long_answer
 
 def define(update: Update, context: CallbackContext) -> None:
-    user_id = update.message.from_user.id
     args = context.args
 
     # Check usage
@@ -147,6 +147,14 @@ def define(update: Update, context: CallbackContext) -> None:
     # Check if case_number contains only digits
     if not case_number.isdigit():
         update.message.reply_text("The case number should contain only digits.")
+        return
+
+    # Check if maximum number of saved cases for the user has reached
+    user_id = update.message.from_user.id
+    cases = get_user_word_case_pairs(user_id)
+    num_cases = len(cases)
+    if num_cases >= MAX_CASES:
+        update.message.reply_text(f"Maximum number of cases reached. Consider removing ones you don't need first.")
         return
 
     if write_to_db(user_id, word, case_number):
