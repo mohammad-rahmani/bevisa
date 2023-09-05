@@ -17,7 +17,7 @@ MAX_CASES = 4
 
 # Define the dictionary for translations
 status_translations = {
-    "in behandeling": "In progress",
+    "in behandeling": "Processing",
     "aanvullende documenten": "Additional documents required",
     "aanvaarding": "Approved",
     "akkoord": "Approved",
