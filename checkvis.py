@@ -15,6 +15,15 @@ TOKEN_PATH = os.path.join(SCRIPT_DIRECTORY, "bot-token.txt")
 DB_PATH = os.path.join(SCRIPT_DIRECTORY, "data.db")
 MAX_CASES = 4
 
+# Define the dictionary for translations
+status_translations = {
+    "in behandeling": "In progress",
+    "aanvullende documenten": "Additional documents required",
+    "aanvaarding": "Approved",
+    "akkoord": "Approved",
+    "weigering": "Rejected"
+}
+
 # Configure logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -123,7 +132,9 @@ def analyze_case(case_number: int) -> (str, str):
     if not case_date:
         row_date = rows[4].find_all(['th', 'td'])
         case_date = row_date[1].get_text(strip=True)
-    short_answer = f'State: *{case_state}*\n(Update: _{case_date}_)'
+    # Get the English translation using the dictionary
+    case_state_en = status_translations.get(case_state.lower(), case_state)
+    short_answer = f'State: *{case_state_en}*\n(Update: _{case_date}_)'
     long_answer = "\n"
     for row in rows:
         cells = row.find_all(['th', 'td'])
