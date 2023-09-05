@@ -134,7 +134,7 @@ def analyze_case(case_number: int) -> (str, str):
         case_date = row_date[1].get_text(strip=True)
     # Get the English translation using the dictionary
     case_state_en = status_translations.get(case_state.lower(), case_state)
-    short_answer = f'State: *{case_state_en}*\n(Update: _{case_date}_)'
+    short_answer = f'Status: *{case_state_en}*\n(Update: _{case_date}_)'
     long_answer = "\n"
     for row in rows:
         cells = row.find_all(['th', 'td'])
