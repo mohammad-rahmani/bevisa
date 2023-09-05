@@ -7,6 +7,7 @@ import requests
 from bs4 import BeautifulSoup
 import random
 import time
+from unidecode import unidecode
 
 # Constants
 SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -17,6 +18,9 @@ MAX_CASES = 4
 # Configure logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def to_english_digits(text) -> str:
+    return unidecode(text)
 
 def write_to_db(user_id: int, word: str, case_number: str) -> bool:
     try:
@@ -137,7 +141,7 @@ def define(update: Update, context: CallbackContext) -> None:
         update.message.reply_text("Usage: /define <word> <case_number>")
         return
 
-    word, case_number = args[0], args[1]
+    word, case_number = args[0], to_english_digits(args[1])
 
     # Check if the word starts with an alphabetic character
     if not word[0].isalpha():
@@ -215,6 +219,7 @@ def check_message(update: Update, context: CallbackContext) -> None:
     msg_text = update.message.text.strip()
 
     if msg_text.isdigit():
+        msg_text = to_english_digits(msg_text)
         short_result, long_result = analyze_case(msg_text)
         short_result = f'{msg_text}\n{short_result}'
         update.message.reply_text(short_result, parse_mode="Markdown")
