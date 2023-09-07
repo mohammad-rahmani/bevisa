@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 import random
 import time
 from unidecode import unidecode
+import re
 
 # Constants
 SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -30,6 +31,16 @@ logger = logging.getLogger(__name__)
 
 def to_english_digits(text) -> str:
     return unidecode(text)
+
+def escape_markdownv2_special_chars(text):
+    # Define a list of special characters in MarkdownV2
+    special_chars = ['*', '_', '~', '`', '|', '>', '#', '+', '-', '=', '{', '}', '(', ')', '[', ']', '.', '!']
+
+    # Escape the special characters using regular expressions
+    for char in special_chars:
+        text = re.sub(re.escape(char), '\\' + char, text)
+
+    return text
 
 def write_to_db(user_id: int, word: str, case_number: str) -> bool:
     try:
@@ -113,16 +124,16 @@ def analyze_case(case_number: int) -> (str, str):
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         logger.error(f"Error retrieving data from DVZ: {str(e)}")
-        return "Error retrieving data from DVZ.", ""
+        return "Error retrieving data from DVZ\.", ""
     
     soup = BeautifulSoup(response.content, 'html.parser')
     dossiernr_element = soup.find(id="dossiernr")
     if dossiernr_element:
-        return f"Your search returned no result in DVZ database.", ""
+        return f"Your search returned no result in DVZ database\.", ""
 
     table = soup.find('table')
     if not table:
-        return f"{case_number}: Error.", ""
+        return f"Result could not be resolved\. Please manually check in DVZ website\.", ""
     
     rows = table.find_all('tr')
     row_state = rows[5].find_all(['th', 'td'])
@@ -134,12 +145,14 @@ def analyze_case(case_number: int) -> (str, str):
         case_date = row_date[1].get_text(strip=True)
     # Get the English translation using the dictionary
     case_state_en = status_translations.get(case_state.lower(), case_state)
-    short_answer = f'Status: *{case_state_en}*\n(Update: _{case_date}_)'
+    short_answer = f'Status: *{case_state_en}*\n\(Update: _{case_date}_\)'
     long_answer = "\n"
     for row in rows:
         cells = row.find_all(['th', 'td'])
-        row_text = f'*{cells[0].get_text(strip=True)}*'
-        row_text += (f'\n_{cells[1].get_text(strip=True)}_' if cells[1].get_text(strip=True) else "")
+        title = escape_markdownv2_special_chars(cells[0].get_text(strip=True))
+        value = escape_markdownv2_special_chars(cells[1].get_text(strip=True))
+        row_text = f'*{title}*'
+        row_text += (f'\n_{value}_' if value else "")
         long_answer += row_text + '\n'
 
     return short_answer, long_answer
@@ -210,8 +223,9 @@ def retrieve_all_states(update: Update, context: CallbackContext) -> None:
         word, case_number = row
         if case_number:
             short_result, long_result = analyze_case(case_number)
-            short_result = f'{word} ({case_number})\n{short_result}'
-            update.message.reply_text(short_result, parse_mode="Markdown")
+            short_result = f'{word} \({case_number}\)\n{short_result}'
+            answer = short_result
+            update.message.reply_text(answer, parse_mode="MarkdownV2")
             time.sleep(random.uniform(0.2, 1.2))
 
 def get_association(update: Update, word: str) -> None:
@@ -221,8 +235,9 @@ def get_association(update: Update, word: str) -> None:
     if case_number:
         # update.message.reply_text(f"Checking latest information for '{word}' ({case_number})")
         short_result, long_result = analyze_case(case_number)
-        short_result = f'{word} ({case_number})\n{short_result}'
-        update.message.reply_text(short_result, parse_mode="Markdown")
+        short_result = f'{word} \({case_number}\)\n{short_result}'
+        answer = short_result
+        update.message.reply_text(answer, parse_mode="MarkdownV2")
     else:
         update.message.reply_text(f"No association found for '{word}'")
 
@@ -233,7 +248,8 @@ def check_message(update: Update, context: CallbackContext) -> None:
         msg_text = to_english_digits(msg_text)
         short_result, long_result = analyze_case(msg_text)
         short_result = f'{msg_text}\n{short_result}'
-        update.message.reply_text(short_result, parse_mode="Markdown")
+        answer = short_result
+        update.message.reply_text(answer, parse_mode="MarkdownV2")
     else:
         get_association(update=update, word=msg_text)
 
