@@ -9,6 +9,7 @@ import random
 import time
 from unidecode import unidecode
 import re
+from datetime import datetime
 
 # Constants
 SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -24,6 +25,30 @@ status_translations = {
     "akkoord": "Approved",
     "weigering": "Rejected"
 }
+
+# Define the dictionary for encoding status
+status_codes = {
+    "in behandeling": 1,
+    "aanvullende documenten": 2,
+    "aanvaarding": 3,
+    "akkoord": 4,
+    "weigering": 5
+}
+
+row_titles = [
+    "Visumaanvraagnummer:",
+    "ReferenceNummer:",
+    "Diplomatic Post:",
+    "Datum visumaanvraag:",
+    "Datum registratie visumaanvraag door Dienst Vreemdelingenzaken:",
+    "Beslissing/Status Dossier:",
+    "Datum beslissing/Status Dossier:",
+    "extra info1:",
+    "extra info2:" 
+    ]
+
+extra_info1 = "Indien een dossier nog in behandeling is of indien het dossier nog niet behandeld is omdat gewacht wordt op de verzending per diplomatieke valies van de documenten die de visumaanvraag ondersteunen, verschijnt als datum, de datum waarop de visumaanvraag geregistreerd werd door de Dienst Vreemdelingenzaken."
+extra_info2 = "In principe wordt de beslissing verzonden op de dag dat ze getroffen wordt. Het kan echter soms enkele dagen duren voordat de diplomatieke of consulaire post de beslissing effectief ontvangt."
 
 # Configure logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -116,7 +141,99 @@ def get_bot_token():
 def start(update: Update, context: CallbackContext) -> None:
     update.message.reply_text("Welcome to the Belgian Visa Check bot! Please send me a case number or use commands from the menu.")
 
-def analyze_case(case_number: int) -> (str, str):
+def date_string_to_bytearray(date_str):
+    # Parse the date string into a datetime object
+    date_obj = datetime.strptime(date_str, "%b %d %Y")
+    
+    # Extract the month, day, and year as integers
+    month = date_obj.month
+    day = date_obj.day
+    year = date_obj.year % 100  # Get the last two digits of the year
+    
+    # Create a byte array with the extracted values
+    byte_array = bytearray([month, day, year])
+    
+    return byte_array
+
+# Summurizes long result so that it fits in reply markup's callback data (max 64 bytes!)
+def encode_result_table(rows, case_number: str) -> bytearray:
+    if not len(rows) == 9:
+        return bytearray()
+    
+    byte_array = bytearray()
+    # Visumaanvraagnummer
+    cells = rows[0].find_all(['th', 'td'])
+    value = cells[1].get_text(strip=True)
+    value = value[:-len(case_number)]
+    pattern = r'(0+)$'  # A regular expression pattern to match trailing zeros
+    trailing_zeros = len(re.search(pattern, value).group(0))
+    prefix = value[:-trailing_zeros]
+    byte_array.extend(prefix.encode('utf-8'))
+    byte_array.extend(bytes([0]))
+    byte_array.extend(bytes([trailing_zeros]))
+    byte_array.extend(bytes([0]))
+    # ReferenceNummer
+    cells = rows[1].find_all(['th', 'td'])
+    value = cells[1].get_text(strip=True)
+    byte_array.extend(value.encode('utf-8'))
+    byte_array.extend(bytes([0]))
+    # Diplomatic Post
+    cells = rows[2].find_all(['th', 'td'])
+    value = cells[1].get_text(strip=True)
+    byte_array.extend(value.encode('utf-8'))
+    byte_array.extend(bytes([0]))
+    # Datum visumaanvraag
+    cells = rows[3].find_all(['th', 'td'])
+    value = cells[1].get_text(strip=True)
+    if value:
+        byte_array.extend(date_string_to_bytearray(value))
+    else:
+        byte_array.extend(bytes([13]))
+    byte_array.extend(bytes([0]))
+    # Datum registratie visumaanvraag door Dienst Vreemdelingenzaken
+    cells = rows[4].find_all(['th', 'td'])
+    value = cells[1].get_text(strip=True)
+    if value:
+        byte_array.extend(date_string_to_bytearray(value))
+    else:
+        byte_array.extend(bytes([13]))
+    byte_array.extend(bytes([0]))
+    # Beslissing/Status Dossier
+    cells = rows[5].find_all(['th', 'td'])
+    value = cells[1].get_text(strip=True)
+    code = status_codes.get(value.lower(), 100)
+    byte_array.extend(bytes([code]))
+    byte_array.extend(bytes([0]))
+    # Datum beslissing/Status Dossier
+    cells = rows[6].find_all(['th', 'td'])
+    value = cells[1].get_text(strip=True)
+    if value:
+        byte_array.extend(date_string_to_bytearray(value))
+    else:
+        byte_array.extend(bytes([13]))
+    byte_array.extend(bytes([0]))
+    # extra info1
+    global extra_info1
+    cells = rows[7].find_all(['th', 'td'])
+    value = cells[1].get_text(strip=True)
+    if value:
+        extra_info1 = value
+        byte_array.extend('t'.encode('utf-8'))
+    else:
+        byte_array.extend('f'.encode('utf-8'))
+    byte_array.extend(bytes([0]))
+    # extra info2
+    global extra_info2
+    cells = rows[8].find_all(['th', 'td'])
+    value = cells[1].get_text(strip=True)
+    if value:
+        extra_info2 = value
+        byte_array.extend('t'.encode('utf-8'))
+    else:
+        byte_array.extend('f'.encode('utf-8'))
+    return byte_array
+
+def analyze_case(case_number: int) -> (str, bytearray):
     url = f"https://infovisa.ibz.be/ResultNl.aspx?place=THR&visumnr={case_number}"
     
     try:
@@ -145,17 +262,18 @@ def analyze_case(case_number: int) -> (str, str):
         case_date = row_date[1].get_text(strip=True)
     # Get the English translation using the dictionary
     case_state_en = status_translations.get(case_state.lower(), case_state)
-    short_answer = f'Status: *{case_state_en}*\n\(Update: _{case_date}_\)'
-    long_answer = "\n"
-    for row in rows:
-        cells = row.find_all(['th', 'td'])
-        title = escape_markdownv2_special_chars(cells[0].get_text(strip=True))
-        value = escape_markdownv2_special_chars(cells[1].get_text(strip=True))
-        row_text = f'*{title}*'
-        row_text += (f'\n_{value}_' if value else "")
-        long_answer += row_text + '\n'
+    brief_answer = f'Status: *{case_state_en}*\n\(Update: _{case_date}_\)'
+    encoded_answer = encode_result_table(rows, case_number)
+    # long_answer = "\n"
+    # for row in rows:
+    #     cells = row.find_all(['th', 'td'])
+    #     title = escape_markdownv2_special_chars(cells[0].get_text(strip=True))
+    #     value = escape_markdownv2_special_chars(cells[1].get_text(strip=True))
+    #     row_text = f'*{title}*'
+    #     row_text += (f'\n_{value}_' if value else "")
+    #     long_answer += row_text + '\n'
 
-    return short_answer, long_answer
+    return brief_answer, encoded_answer
 
 def define(update: Update, context: CallbackContext) -> None:
     args = context.args
@@ -215,6 +333,9 @@ def remove(update: Update, context: CallbackContext) -> None:
     else:
         update.message.reply_text(f"'{word_to_remove}' was not found in your dictionary.")
 
+def respond_with_reply_markup(update: Update, answer: str, encoded_result: bytearray):
+    update.message.reply_text(answer, parse_mode="MarkdownV2")
+
 def retrieve_all_states(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
     cases = get_user_word_case_pairs(user_id)
@@ -222,10 +343,9 @@ def retrieve_all_states(update: Update, context: CallbackContext) -> None:
     for row in cases:
         word, case_number = row
         if case_number:
-            short_result, long_result = analyze_case(case_number)
-            short_result = f'{word} \({case_number}\)\n{short_result}'
-            answer = short_result
-            update.message.reply_text(answer, parse_mode="MarkdownV2")
+            brief_result, encoded_result = analyze_case(case_number)
+            answer = f'{word} \({case_number}\)\n{brief_result}'
+            respond_with_reply_markup(update, answer, encoded_result)
             time.sleep(random.uniform(0.2, 1.2))
 
 def get_association(update: Update, word: str) -> None:
@@ -233,11 +353,9 @@ def get_association(update: Update, word: str) -> None:
     case_number = read_from_db(user_id, word)
 
     if case_number:
-        # update.message.reply_text(f"Checking latest information for '{word}' ({case_number})")
-        short_result, long_result = analyze_case(case_number)
-        short_result = f'{word} \({case_number}\)\n{short_result}'
-        answer = short_result
-        update.message.reply_text(answer, parse_mode="MarkdownV2")
+        brief_result, encoded_result = analyze_case(case_number)
+        answer = f'{word} \({case_number}\)\n{brief_result}'
+        respond_with_reply_markup(update, answer, encoded_result)
     else:
         update.message.reply_text(f"No association found for '{word}'")
 
@@ -246,10 +364,9 @@ def check_message(update: Update, context: CallbackContext) -> None:
 
     if msg_text.isdigit():
         msg_text = to_english_digits(msg_text)
-        short_result, long_result = analyze_case(msg_text)
-        short_result = f'{msg_text}\n{short_result}'
-        answer = short_result
-        update.message.reply_text(answer, parse_mode="MarkdownV2")
+        brief_result, encoded_result = analyze_case(msg_text)
+        answer = f'{msg_text}\n{brief_result}'
+        respond_with_reply_markup(update, answer, encoded_result)
     else:
         get_association(update=update, word=msg_text)
 
