@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 import os
 import sqlite3
@@ -334,7 +334,14 @@ def remove(update: Update, context: CallbackContext) -> None:
         update.message.reply_text(f"'{word_to_remove}' was not found in your dictionary.")
 
 def respond_with_reply_markup(update: Update, answer: str, encoded_result: bytearray):
-    update.message.reply_text(answer, parse_mode="MarkdownV2")
+    if not encoded_result:
+        update.message.reply_text(answer, parse_mode="MarkdownV2")
+        return
+
+    keyboard = [[InlineKeyboardButton("Details", callback_data=encoded_result)]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    update.message.reply_text(text=answer, reply_markup=reply_markup, parse_mode="MarkdownV2")
 
 def retrieve_all_states(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
