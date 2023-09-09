@@ -1,5 +1,5 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext,CallbackQueryHandler
 import os
 import sqlite3
 import logging
@@ -7,9 +7,9 @@ import requests
 from bs4 import BeautifulSoup
 import random
 import time
+from datetime import datetime
 from unidecode import unidecode
 import re
-from datetime import datetime
 
 # Constants
 SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -156,11 +156,11 @@ def date_string_to_bytearray(date_str):
     return byte_array
 
 # Summurizes long result so that it fits in reply markup's callback data (max 64 bytes!)
-def encode_result_table(rows, case_number: str) -> bytearray:
+def encode_result_table(rows, case_number: str) -> str:
     if not len(rows) == 9:
-        return bytearray()
+        return ""
     
-    byte_array = bytearray()
+    payload = ""
     # Visumaanvraagnummer
     cells = rows[0].find_all(['th', 'td'])
     value = cells[1].get_text(strip=True)
@@ -168,72 +168,62 @@ def encode_result_table(rows, case_number: str) -> bytearray:
     pattern = r'(0+)$'  # A regular expression pattern to match trailing zeros
     trailing_zeros = len(re.search(pattern, value).group(0))
     prefix = value[:-trailing_zeros]
-    byte_array.extend(prefix.encode('utf-8'))
-    byte_array.extend(bytes([0]))
-    byte_array.extend(bytes([trailing_zeros]))
-    byte_array.extend(bytes([0]))
+    payload += prefix + '\x00' + chr(trailing_zeros) + '\x00'
     # ReferenceNummer
     cells = rows[1].find_all(['th', 'td'])
     value = cells[1].get_text(strip=True)
-    byte_array.extend(value.encode('utf-8'))
-    byte_array.extend(bytes([0]))
+    payload += value + '\x00'
     # Diplomatic Post
     cells = rows[2].find_all(['th', 'td'])
     value = cells[1].get_text(strip=True)
-    byte_array.extend(value.encode('utf-8'))
-    byte_array.extend(bytes([0]))
+    payload += value + '\x00'
     # Datum visumaanvraag
     cells = rows[3].find_all(['th', 'td'])
     value = cells[1].get_text(strip=True)
     if value:
-        byte_array.extend(date_string_to_bytearray(value))
+        payload += ''.join(chr(byte_value) for byte_value in date_string_to_bytearray(value)) + '\x00'
     else:
-        byte_array.extend(bytes([13]))
-    byte_array.extend(bytes([0]))
+        payload += chr(13) + '\x00'
     # Datum registratie visumaanvraag door Dienst Vreemdelingenzaken
     cells = rows[4].find_all(['th', 'td'])
     value = cells[1].get_text(strip=True)
     if value:
-        byte_array.extend(date_string_to_bytearray(value))
+        payload += ''.join(chr(byte_value) for byte_value in date_string_to_bytearray(value)) + '\x00'
     else:
-        byte_array.extend(bytes([13]))
-    byte_array.extend(bytes([0]))
+        payload += chr(13) + '\x00'
     # Beslissing/Status Dossier
     cells = rows[5].find_all(['th', 'td'])
     value = cells[1].get_text(strip=True)
     code = status_codes.get(value.lower(), 100)
-    byte_array.extend(bytes([code]))
-    byte_array.extend(bytes([0]))
+    payload += chr(code) + '\x00'
     # Datum beslissing/Status Dossier
     cells = rows[6].find_all(['th', 'td'])
     value = cells[1].get_text(strip=True)
     if value:
-        byte_array.extend(date_string_to_bytearray(value))
+        payload += ''.join(chr(byte_value) for byte_value in date_string_to_bytearray(value)) + '\x00'
     else:
-        byte_array.extend(bytes([13]))
-    byte_array.extend(bytes([0]))
+        payload += chr(13) + '\x00'
     # extra info1
     global extra_info1
     cells = rows[7].find_all(['th', 'td'])
     value = cells[1].get_text(strip=True)
     if value:
         extra_info1 = value
-        byte_array.extend('t'.encode('utf-8'))
+        payload += 't' + '\x00'
     else:
-        byte_array.extend('f'.encode('utf-8'))
-    byte_array.extend(bytes([0]))
+        payload += 'f' + '\x00'
     # extra info2
     global extra_info2
     cells = rows[8].find_all(['th', 'td'])
     value = cells[1].get_text(strip=True)
     if value:
         extra_info2 = value
-        byte_array.extend('t'.encode('utf-8'))
+        payload += 't'
     else:
-        byte_array.extend('f'.encode('utf-8'))
-    return byte_array
+        payload += 'f'
+    return payload
 
-def analyze_case(case_number: int) -> (str, bytearray):
+def analyze_case(case_number: int) -> (str, str):
     url = f"https://infovisa.ibz.be/ResultNl.aspx?place=THR&visumnr={case_number}"
     
     try:
@@ -333,7 +323,19 @@ def remove(update: Update, context: CallbackContext) -> None:
     else:
         update.message.reply_text(f"'{word_to_remove}' was not found in your dictionary.")
 
-def respond_with_reply_markup(update: Update, answer: str, encoded_result: bytearray):
+def toggle_answer(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+
+    current_answer = query.message.text
+    print(query.data)
+
+    # keyboard = [[InlineKeyboardButton("Details", callback_data=current_answer)]]
+    # reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # query.edit_message_text(text=new_answer, reply_markup=reply_markup, parse_mode="MarkdownV2")
+
+def respond_with_reply_markup(update: Update, answer: str, encoded_result: str):
     if not encoded_result:
         update.message.reply_text(answer, parse_mode="MarkdownV2")
         return
@@ -391,6 +393,7 @@ def main():
     dp.add_handler(CommandHandler("remove", remove, pass_args=True))
     dp.add_handler(CommandHandler("all", retrieve_all_states))
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, check_message))
+    dp.add_handler(CallbackQueryHandler(toggle_answer))
 
     updater.start_polling()
     updater.idle()
