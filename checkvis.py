@@ -223,7 +223,7 @@ def encode_result_table(rows, case_number: str) -> str:
 
     return payload
 
-def decode_result_table(encoded_result: str) -> (list, bool):
+def decode_result_table(encoded_result: str, case_number: str) -> list:
     rows = []
     index = 0
 
@@ -240,8 +240,8 @@ def decode_result_table(encoded_result: str) -> (list, bool):
     # Visumaanvraagnummer
     prefix = extract_string()
     trailing_zeros = ord(extract_string())
-    case_number = prefix + '0' * trailing_zeros
-    rows.append(["Visumaanvraagnummer:", case_number])
+    full_case_number = prefix + '0' * trailing_zeros + str(case_number)
+    rows.append(["Visumaanvraagnummer:", full_case_number])
 
     # ReferenceNummer
     reference_number = extract_string()
@@ -287,12 +287,9 @@ def decode_result_table(encoded_result: str) -> (list, bool):
     extra_info2_exists = extract_string() == 't'
     rows.append(["extra info2:", extra_info2 if extra_info2_exists else ""])
 
-    # was it a brief or a long message?
-    is_brief = extract_string() == 'b'
+    return rows
 
-    return rows, is_brief
-
-def extract_brief_answer(rows: list) -> str:
+def form_brief_answer(rows: list) -> str:
     # Hard coded row number of case state: 5
     case_state = rows[5][1]
     case_state_en = status_translations.get(case_state.lower(), case_state)
@@ -305,7 +302,7 @@ def extract_brief_answer(rows: list) -> str:
     # Return with Markdown V2 format:
     return f"Status: *{case_state_en}*\n\(Update: _{case_date}_\)"
 
-def extract_long_answer(rows: list) -> str:
+def form_long_answer(rows: list) -> str:
     long_answer = "\n"
     for row in rows:
         title = escape_markdownv2_special_chars(row[0])
@@ -348,8 +345,8 @@ def analyze_case(case_number: int) -> (str, str):
     # ('b' for brief answer, 'l' for long answer)
     encoded_answer += 'b'
     
-    brief_answer = extract_brief_answer(rows)
-    # long_answer = extract_long_answer(rows)
+    brief_answer = form_brief_answer(rows)
+    # long_answer = form_long_answer(rows)
 
     return brief_answer, encoded_answer
 
@@ -416,21 +413,29 @@ def toggle_answer(update: Update, context: CallbackContext) -> None:
     query.answer()
 
     current_answer = query.message.text
-    rows, is_brief = decode_result_table(query.data)
+    encoded_data = query.data
+    is_brief = encoded_data[-1] == 'b'
 
     if is_brief:
-        # case_number = 
-        print("is brief")
+        case_number = re.search(r'^.*?(\d+).*?\n', current_answer).group(1)
+        rows = decode_result_table(encoded_data, case_number)
+        new_answer = form_long_answer(rows)
+        encoded_data = encoded_data[:-1] + 'l'
     else:
-        # case_number = 
-        print("is long")
+        rows = decode_result_table(encoded_data, "")
+        partial_full_case_number = rows[0][1]
+        start_index = current_answer.find(partial_full_case_number) + len(partial_full_case_number)
+        end_index = current_answer.find("\n", start_index)
+        case_number = current_answer[start_index:end_index]
+        rows[0][1] += case_number
+        new_answer = form_brief_answer(rows)
+        new_answer = f'{case_number}\n{new_answer}'
+        encoded_data = encoded_data[:-1] + 'b'
 
-    brief_answer = extract_brief_answer(rows)
+    keyboard = [[InlineKeyboardButton("Details", callback_data=encoded_data)]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # keyboard = [[InlineKeyboardButton("Details", callback_data=current_answer)]]
-    # reply_markup = InlineKeyboardMarkup(keyboard)
-
-    # query.edit_message_text(text=new_answer, reply_markup=reply_markup, parse_mode="MarkdownV2")
+    query.edit_message_text(text=new_answer, reply_markup=reply_markup, parse_mode="MarkdownV2")
 
 def respond_with_reply_markup(update: Update, answer: str, encoded_result: str):
     if not encoded_result:
