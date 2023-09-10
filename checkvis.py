@@ -155,72 +155,72 @@ def date_string_to_bytearray(date_str):
     
     return byte_array
 
-# Summurizes long result so that it fits in reply markup's callback data (max 64 bytes!)
+# Summurizes case info so that it fits in reply markup's callback data (max 64 bytes!)
 def encode_result_table(rows, case_number: str) -> str:
     if not len(rows) == 9:
         return ""
     
     payload = ""
     # Visumaanvraagnummer
-    cells = rows[0].find_all(['th', 'td'])
-    value = cells[1].get_text(strip=True)
+    value = rows[0][1]
     value = value[:-len(case_number)]
     pattern = r'(0+)$'  # A regular expression pattern to match trailing zeros
     trailing_zeros = len(re.search(pattern, value).group(0))
     prefix = value[:-trailing_zeros]
     payload += prefix + '\x00' + chr(trailing_zeros) + '\x00'
+
     # ReferenceNummer
-    cells = rows[1].find_all(['th', 'td'])
-    value = cells[1].get_text(strip=True)
+    value = rows[1][1]
     payload += value + '\x00'
+
     # Diplomatic Post
-    cells = rows[2].find_all(['th', 'td'])
-    value = cells[1].get_text(strip=True)
+    value = rows[2][1]
     payload += value + '\x00'
+
     # Datum visumaanvraag
-    cells = rows[3].find_all(['th', 'td'])
-    value = cells[1].get_text(strip=True)
+    value = rows[3][1]
     if value:
         payload += ''.join(chr(byte_value) for byte_value in date_string_to_bytearray(value)) + '\x00'
     else:
         payload += chr(13) + '\x00'
+
     # Datum registratie visumaanvraag door Dienst Vreemdelingenzaken
-    cells = rows[4].find_all(['th', 'td'])
-    value = cells[1].get_text(strip=True)
+    value = rows[4][1]
     if value:
         payload += ''.join(chr(byte_value) for byte_value in date_string_to_bytearray(value)) + '\x00'
     else:
         payload += chr(13) + '\x00'
+
     # Beslissing/Status Dossier
-    cells = rows[5].find_all(['th', 'td'])
-    value = cells[1].get_text(strip=True)
+    value = rows[5][1]
     code = status_codes.get(value.lower(), 100)
     payload += chr(code) + '\x00'
+
     # Datum beslissing/Status Dossier
-    cells = rows[6].find_all(['th', 'td'])
-    value = cells[1].get_text(strip=True)
+    value = rows[6][1]
     if value:
         payload += ''.join(chr(byte_value) for byte_value in date_string_to_bytearray(value)) + '\x00'
     else:
         payload += chr(13) + '\x00'
+
     # extra info1
     global extra_info1
-    cells = rows[7].find_all(['th', 'td'])
-    value = cells[1].get_text(strip=True)
+    value = rows[7][1]
     if value:
         extra_info1 = value
         payload += 't' + '\x00'
     else:
         payload += 'f' + '\x00'
+
     # extra info2
     global extra_info2
-    cells = rows[8].find_all(['th', 'td'])
-    value = cells[1].get_text(strip=True)
+    value = rows[8][1]
     if value:
         extra_info2 = value
         payload += 't'
     else:
         payload += 'f'
+
     return payload
 
 def decode_result_table(encoded_result: str) -> list:
@@ -292,6 +292,30 @@ def decode_result_table(encoded_result: str) -> list:
 
     return rows
 
+def extract_brief_answer(rows: list) -> str:
+    # Hard coded row number of case state: 5
+    case_state = rows[5][1]
+    case_state_en = status_translations.get(case_state.lower(), case_state)
+    case_state_en = escape_markdownv2_special_chars(case_state_en)
+
+    # Hard coded row number of case date: 6 if rows[6][1] else 4
+    case_date = rows[6][1] if rows[6][1] else rows[4][1]
+    case_date = escape_markdownv2_special_chars(case_date)
+
+    # Return with Markdown V2 format:
+    return f"Status: *{case_state_en}*\n\(Update: _{case_date}_\)"
+
+def extract_long_answer(rows: list) -> str:
+    long_answer = "\n"
+    for row in rows:
+        title = escape_markdownv2_special_chars(row[0])
+        value = escape_markdownv2_special_chars(row[1])
+        row_text = f'*{title}*'
+        row_text += (f'\n_{value}_' if value else "")
+        long_answer += row_text + '\n'
+
+    return long_answer
+
 def analyze_case(case_number: int) -> (str, str):
     url = f"https://infovisa.ibz.be/ResultNl.aspx?place=THR&visumnr={case_number}"
     
@@ -311,26 +335,17 @@ def analyze_case(case_number: int) -> (str, str):
     if not table:
         return f"Result could not be resolved\. Please manually check in DVZ website\.", ""
     
-    rows = table.find_all('tr')
-    row_state = rows[5].find_all(['th', 'td'])
-    case_state = row_state[1].get_text(strip=True)
-    row_date = rows[6].find_all(['th', 'td'])
-    case_date = row_date[1].get_text(strip=True)
-    if not case_date:
-        row_date = rows[4].find_all(['th', 'td'])
-        case_date = row_date[1].get_text(strip=True)
-    # Get the English translation using the dictionary
-    case_state_en = status_translations.get(case_state.lower(), case_state)
-    brief_answer = f'Status: *{case_state_en}*\n\(Update: _{case_date}_\)'
+    html_rows = table.find_all('tr')
+    rows = []
+    for row in html_rows:
+        cells = row.find_all(['th', 'td'])
+        title = cells[0].get_text(strip=True)
+        value = cells[1].get_text(strip=True)
+        rows.append([title, value])
+
     encoded_answer = encode_result_table(rows, case_number)
-    # long_answer = "\n"
-    # for row in rows:
-    #     cells = row.find_all(['th', 'td'])
-    #     title = escape_markdownv2_special_chars(cells[0].get_text(strip=True))
-    #     value = escape_markdownv2_special_chars(cells[1].get_text(strip=True))
-    #     row_text = f'*{title}*'
-    #     row_text += (f'\n_{value}_' if value else "")
-    #     long_answer += row_text + '\n'
+    brief_answer = extract_brief_answer(rows)
+    # long_answer = extract_long_answer(rows)
 
     return brief_answer, encoded_answer
 
