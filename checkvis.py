@@ -163,7 +163,7 @@ def encode_result_table(rows, case_number: str) -> str:
     payload = ""
     # Visumaanvraagnummer
     value = rows[0][1]
-    value = value[:-len(case_number)]
+    value = value[:-len(str(case_number))]
     pattern = r'(0+)$'  # A regular expression pattern to match trailing zeros
     trailing_zeros = len(re.search(pattern, value).group(0))
     prefix = value[:-trailing_zeros]
@@ -253,16 +253,14 @@ def decode_result_table(encoded_result: str) -> (list, bool):
 
     # Datum visumaanvraag
     date_visumaanvraag = extract_string()
-    if date_visumaanvraag:
-        date_str = ''.join([str(ord(char)).zfill(2) for char in date_visumaanvraag])
-        date_visumaanvraag = datetime.strptime(date_str, "%m%d%y").strftime("%b %d %Y")
+    date_str = ''.join([str(ord(char)).zfill(2) for char in date_visumaanvraag])
+    date_visumaanvraag = "" if date_str == "13" else datetime.strptime(date_str, "%m%d%y").strftime("%b %d %Y")
     rows.append(["Datum visumaanvraag:", date_visumaanvraag])
 
     # Datum registratie visumaanvraag door Dienst Vreemdelingenzaken
     date_registratie = extract_string()
-    if date_registratie:
-        date_str = ''.join([str(ord(char)).zfill(2) for char in date_registratie])
-        date_registratie = datetime.strptime(date_str, "%m%d%y").strftime("%b %d %Y")
+    date_str = ''.join([str(ord(char)).zfill(2) for char in date_registratie])
+    date_registratie = "" if date_str == "13" else datetime.strptime(date_str, "%m%d%y").strftime("%b %d %Y")
     rows.append(["Datum registratie visumaanvraag door Dienst Vreemdelingenzaken:", date_registratie])
 
     # Beslissing/Status Dossier
@@ -277,9 +275,8 @@ def decode_result_table(encoded_result: str) -> (list, bool):
 
     # Datum beslissing/Status Dossier
     date_beslissing = extract_string()
-    if date_beslissing:
-        date_str = ''.join([str(ord(char)).zfill(2) for char in date_beslissing])
-        date_beslissing = datetime.strptime(date_str, "%m%d%y").strftime("%b %d %Y")
+    date_str = ''.join([str(ord(char)).zfill(2) for char in date_beslissing])
+    date_beslissing = "" if date_str == "13" else datetime.strptime(date_str, "%m%d%y").strftime("%b %d %Y")
     rows.append(["Datum beslissing/Status Dossier:", date_beslissing])
 
     # extra info1
@@ -472,9 +469,9 @@ def check_message(update: Update, context: CallbackContext) -> None:
     msg_text = update.message.text.strip()
 
     if msg_text.isdigit():
-        msg_text = to_english_digits(msg_text)
-        brief_result, encoded_result = analyze_case(msg_text)
-        answer = f'{msg_text}\n{brief_result}'
+        case_number = to_english_digits(msg_text)
+        brief_result, encoded_result = analyze_case(case_number)
+        answer = f'{case_number}\n{brief_result}'
         respond_with_reply_markup(update, answer, encoded_result)
     else:
         get_association(update=update, word=msg_text)
