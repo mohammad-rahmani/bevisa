@@ -223,6 +223,75 @@ def encode_result_table(rows, case_number: str) -> str:
         payload += 'f'
     return payload
 
+def decode_result_table(encoded_result: str) -> list:
+    rows = []
+    index = 0
+
+    # Function to extract a null-terminated string from the encoded result
+    def extract_string():
+        nonlocal index
+        result = ""
+        while index < len(encoded_result) and encoded_result[index] != '\x00':
+            result += encoded_result[index]
+            index += 1
+        index += 1  # Skip the null-terminator
+        return result
+
+    # Visumaanvraagnummer
+    prefix = extract_string()
+    trailing_zeros = ord(extract_string())
+    case_number = prefix + '0' * trailing_zeros
+    rows.append(["Visumaanvraagnummer:", case_number])
+
+    # ReferenceNummer
+    reference_number = extract_string()
+    rows.append(["ReferenceNummer:", reference_number])
+
+    # Diplomatic Post
+    diplomatic_post = extract_string()
+    rows.append(["Diplomatic Post:", diplomatic_post])
+
+    # Datum visumaanvraag
+    date_visumaanvraag = extract_string()
+    if date_visumaanvraag:
+        date_str = ''.join([str(ord(char)).zfill(2) for char in date_visumaanvraag])
+        date_visumaanvraag = datetime.strptime(date_str, "%m%d%y").strftime("%b %d %Y")
+    rows.append(["Datum visumaanvraag:", date_visumaanvraag])
+
+    # Datum registratie visumaanvraag door Dienst Vreemdelingenzaken
+    date_registratie = extract_string()
+    if date_registratie:
+        date_str = ''.join([str(ord(char)).zfill(2) for char in date_registratie])
+        date_registratie = datetime.strptime(date_str, "%m%d%y").strftime("%b %d %Y")
+    rows.append(["Datum registratie visumaanvraag door Dienst Vreemdelingenzaken:", date_registratie])
+
+    # Beslissing/Status Dossier
+    status_code = ord(extract_string())
+    for key, value in status_codes.items():
+        if value == status_code:
+            status_dossier = key
+            break
+    else:
+        status_dossier = "Unknown"
+    rows.append(["Beslissing/Status Dossier:", status_dossier])
+
+    # Datum beslissing/Status Dossier
+    date_beslissing = extract_string()
+    if date_beslissing:
+        date_str = ''.join([str(ord(char)).zfill(2) for char in date_beslissing])
+        date_beslissing = datetime.strptime(date_str, "%m%d%y").strftime("%b %d %Y")
+    rows.append(["Datum beslissing/Status Dossier:", date_beslissing])
+
+    # extra info1
+    extra_info1_exists = extract_string() == 't'
+    rows.append(["extra info1:", extra_info1 if extra_info1_exists else ""])
+
+    # extra info2
+    extra_info2_exists = extract_string() == 't'
+    rows.append(["extra info2:", extra_info2 if extra_info2_exists else ""])
+
+    return rows
+
 def analyze_case(case_number: int) -> (str, str):
     url = f"https://infovisa.ibz.be/ResultNl.aspx?place=THR&visumnr={case_number}"
     
@@ -328,7 +397,7 @@ def toggle_answer(update: Update, context: CallbackContext) -> None:
     query.answer()
 
     current_answer = query.message.text
-    print(query.data)
+    rows = decode_result_table(query.data)
 
     # keyboard = [[InlineKeyboardButton("Details", callback_data=current_answer)]]
     # reply_markup = InlineKeyboardMarkup(keyboard)
