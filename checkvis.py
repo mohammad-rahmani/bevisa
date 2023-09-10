@@ -303,7 +303,7 @@ def form_brief_answer(rows: list) -> str:
     return f"Status: *{case_state_en}*\n\(Update: _{case_date}_\)"
 
 def form_long_answer(rows: list) -> str:
-    long_answer = "\n"
+    long_answer = ""
     for row in rows:
         title = escape_markdownv2_special_chars(row[0])
         value = escape_markdownv2_special_chars(row[1])
@@ -413,23 +413,19 @@ def toggle_answer(update: Update, context: CallbackContext) -> None:
     query.answer()
 
     current_answer = query.message.text
+    first_line = current_answer.splitlines()[0]
+    case_number = re.sub(r'\D', '', first_line)
+    first_line = escape_markdownv2_special_chars(first_line)
+
     encoded_data = query.data
     is_brief = encoded_data[-1] == 'b'
+    rows = decode_result_table(encoded_data, case_number)
 
     if is_brief:
-        case_number = re.search(r'^.*?(\d+).*?\n', current_answer).group(1)
-        rows = decode_result_table(encoded_data, case_number)
-        new_answer = form_long_answer(rows)
+        new_answer = f'{first_line}\n{form_long_answer(rows)}'
         encoded_data = encoded_data[:-1] + 'l'
     else:
-        rows = decode_result_table(encoded_data, "")
-        partial_full_case_number = rows[0][1]
-        start_index = current_answer.find(partial_full_case_number) + len(partial_full_case_number)
-        end_index = current_answer.find("\n", start_index)
-        case_number = current_answer[start_index:end_index]
-        rows[0][1] += case_number
-        new_answer = form_brief_answer(rows)
-        new_answer = f'{case_number}\n{new_answer}'
+        new_answer = f'{first_line}\n{form_brief_answer(rows)}'
         encoded_data = encoded_data[:-1] + 'b'
 
     keyboard = [[InlineKeyboardButton("Details", callback_data=encoded_data)]]
