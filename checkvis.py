@@ -217,13 +217,13 @@ def encode_result_table(rows, case_number: str) -> str:
     value = rows[8][1]
     if value:
         extra_info2 = value
-        payload += 't'
+        payload += 't' + '\x00'
     else:
-        payload += 'f'
+        payload += 'f' + '\x00'
 
     return payload
 
-def decode_result_table(encoded_result: str) -> list:
+def decode_result_table(encoded_result: str) -> (list, bool):
     rows = []
     index = 0
 
@@ -290,7 +290,10 @@ def decode_result_table(encoded_result: str) -> list:
     extra_info2_exists = extract_string() == 't'
     rows.append(["extra info2:", extra_info2 if extra_info2_exists else ""])
 
-    return rows
+    # was it a brief or a long message?
+    is_brief = extract_string() == 'b'
+
+    return rows, is_brief
 
 def extract_brief_answer(rows: list) -> str:
     # Hard coded row number of case state: 5
@@ -344,6 +347,10 @@ def analyze_case(case_number: int) -> (str, str):
         rows.append([title, value])
 
     encoded_answer = encode_result_table(rows, case_number)
+    # Indicate a brief answer because brief_answer will be returned:
+    # ('b' for brief answer, 'l' for long answer)
+    encoded_answer += 'b'
+    
     brief_answer = extract_brief_answer(rows)
     # long_answer = extract_long_answer(rows)
 
@@ -412,7 +419,16 @@ def toggle_answer(update: Update, context: CallbackContext) -> None:
     query.answer()
 
     current_answer = query.message.text
-    rows = decode_result_table(query.data)
+    rows, is_brief = decode_result_table(query.data)
+
+    if is_brief:
+        # case_number = 
+        print("is brief")
+    else:
+        # case_number = 
+        print("is long")
+
+    brief_answer = extract_brief_answer(rows)
 
     # keyboard = [[InlineKeyboardButton("Details", callback_data=current_answer)]]
     # reply_markup = InlineKeyboardMarkup(keyboard)
