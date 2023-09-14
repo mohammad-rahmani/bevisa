@@ -303,7 +303,7 @@ def form_brief_answer(rows: list) -> str:
     return f"Status: *{case_state_en}*\n\(Update: _{case_date}_\)"
 
 def form_long_answer(rows: list) -> str:
-    long_answer = ""
+    long_answer = "\n"
     for row in rows:
         title = escape_markdownv2_special_chars(row[0])
         value = escape_markdownv2_special_chars(row[1])
@@ -408,24 +408,31 @@ def remove(update: Update, context: CallbackContext) -> None:
     else:
         update.message.reply_text(f"'{word_to_remove}' was not found in your dictionary.")
 
+def add_header_and_footer(header: str, body: str, footer: str = '') -> str:
+    current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    time_str = escape_markdownv2_special_chars(f"Retrieved on: {current_time}")
+    footer = footer if footer else time_str
+
+    return f"{header}\n{body}\n{footer}"
+
 def toggle_answer(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     query.answer()
 
     current_answer = query.message.text
-    first_line = current_answer.splitlines()[0]
-    case_number = re.sub(r'\D', '', first_line)
-    first_line = escape_markdownv2_special_chars(first_line)
+    footer = escape_markdownv2_special_chars(current_answer.splitlines()[-1])
+    header = escape_markdownv2_special_chars(current_answer.splitlines()[0])
+    case_number = re.sub(r'\D', '', header)
 
     encoded_data = query.data
     is_brief = encoded_data[-1] == 'b'
     rows = decode_result_table(encoded_data, case_number)
 
     if is_brief:
-        new_answer = f'{first_line}\n{form_long_answer(rows)}'
+        new_answer = add_header_and_footer(header, form_long_answer(rows), footer)
         encoded_data = encoded_data[:-1] + 'l'
     else:
-        new_answer = f'{first_line}\n{form_brief_answer(rows)}'
+        new_answer = add_header_and_footer(header, form_brief_answer(rows), footer)
         encoded_data = encoded_data[:-1] + 'b'
 
     keyboard = [[InlineKeyboardButton("Details", callback_data=encoded_data)]]
@@ -451,7 +458,7 @@ def retrieve_all_states(update: Update, context: CallbackContext) -> None:
         word, case_number = row
         if case_number:
             brief_result, encoded_result = analyze_case(case_number)
-            answer = f'{word} \({case_number}\)\n{brief_result}'
+            answer = add_header_and_footer(f"{word} \({case_number}\)", brief_result)
             respond_with_reply_markup(update, answer, encoded_result)
             time.sleep(random.uniform(0.2, 1.2))
 
@@ -461,7 +468,7 @@ def get_association(update: Update, word: str) -> None:
 
     if case_number:
         brief_result, encoded_result = analyze_case(case_number)
-        answer = f'{word} \({case_number}\)\n{brief_result}'
+        answer = add_header_and_footer(f"{word} \({case_number}\)", brief_result)
         respond_with_reply_markup(update, answer, encoded_result)
     else:
         update.message.reply_text(f"No association found for '{word}'")
@@ -472,7 +479,7 @@ def check_message(update: Update, context: CallbackContext) -> None:
     if msg_text.isdigit():
         case_number = to_english_digits(msg_text)
         brief_result, encoded_result = analyze_case(case_number)
-        answer = f'{case_number}\n{brief_result}'
+        answer = add_header_and_footer(str(case_number), brief_result)
         respond_with_reply_markup(update, answer, encoded_result)
     else:
         get_association(update=update, word=msg_text)
