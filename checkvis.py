@@ -415,16 +415,23 @@ def add_header_and_footer(header: str, body: str, footer: str = '') -> str:
 
     return f"{header}\n{body}\n{footer}"
 
-def toggle_answer(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    query.answer()
+def refresh_case(query: Update.callback_query, context: CallbackContext) -> (str,str):
+    current_answer = query.message.text
+    header = escape_markdownv2_special_chars(current_answer.splitlines()[0])
+    case_number = re.sub(r'\D', '', header)
 
+    brief_result, encoded_result = analyze_case(case_number)
+    answer = add_header_and_footer(header, brief_result)
+    
+    return (answer, encoded_result)
+
+def toggle_answer(query: Update.callback_query, context: CallbackContext) -> (str,str):
     current_answer = query.message.text
     footer = escape_markdownv2_special_chars(current_answer.splitlines()[-1])
     header = escape_markdownv2_special_chars(current_answer.splitlines()[0])
     case_number = re.sub(r'\D', '', header)
 
-    encoded_data = query.data
+    encoded_data = query.data[1:]
     is_brief = encoded_data[-1] == 'b'
     rows = decode_result_table(encoded_data, case_number)
 
@@ -435,20 +442,45 @@ def toggle_answer(update: Update, context: CallbackContext) -> None:
         new_answer = add_header_and_footer(header, form_brief_answer(rows), footer)
         encoded_data = encoded_data[:-1] + 'b'
 
-    keyboard = [[InlineKeyboardButton("Details", callback_data=encoded_data)]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    return (new_answer, encoded_data)
 
-    query.edit_message_text(text=new_answer, reply_markup=reply_markup, parse_mode="MarkdownV2")
+def callback_query_handler(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
 
-def respond_with_reply_markup(update: Update, answer: str, encoded_result: str):
-    if not encoded_result:
-        update.message.reply_text(answer, parse_mode="MarkdownV2")
-        return
+    current_message = escape_markdownv2_special_chars(query.message.text)
+    pressed_button = query.data[0]
+    if pressed_button == '\x00':
+        new_answer, encoded_data = toggle_answer(query, context)
+    elif pressed_button == '\x01':
+        query.edit_message_text(text=f'||{current_message}||', parse_mode="MarkdownV2")
+        new_answer, encoded_data = refresh_case(query, context)
 
-    keyboard = [[InlineKeyboardButton("Details", callback_data=encoded_result)]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    edit_with_reply_markup(update, new_answer, encoded_data)
+
+def build_reply_markup(encoded_data: str) -> InlineKeyboardMarkup:
+    detail_button = InlineKeyboardButton("Details", callback_data=f"\x00{encoded_data}")
+    refresh_button = InlineKeyboardButton("🔄", callback_data=f"\x01")
+
+    markup_first_line = []
+    if encoded_data:
+        markup_first_line.append(detail_button)
+    markup_first_line.append(refresh_button)
+    
+    keyboard = [markup_first_line]
+    return InlineKeyboardMarkup(keyboard)
+
+def respond_with_reply_markup(update: Update, answer: str, encoded_data: str):
+    reply_markup = build_reply_markup(encoded_data)
 
     update.message.reply_text(text=answer, reply_markup=reply_markup, parse_mode="MarkdownV2")
+
+def edit_with_reply_markup(update: Update, new_answer: str, encoded_data: str):
+    query = update.callback_query
+
+    reply_markup = build_reply_markup(encoded_data)
+
+    query.edit_message_text(text=new_answer, reply_markup=reply_markup, parse_mode="MarkdownV2")
 
 def retrieve_all_states(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
@@ -498,7 +530,7 @@ def main():
     dp.add_handler(CommandHandler("remove", remove, pass_args=True))
     dp.add_handler(CommandHandler("all", retrieve_all_states))
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, check_message))
-    dp.add_handler(CallbackQueryHandler(toggle_answer))
+    dp.add_handler(CallbackQueryHandler(callback_query_handler))
 
     updater.start_polling()
     updater.idle()
