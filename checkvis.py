@@ -19,11 +19,11 @@ MAX_CASES = 4
 
 # Define the dictionary for translations
 status_translations = {
-    "in behandeling": "Processing",
-    "aanvullende documenten": "Additional documents required",
-    "aanvaarding": "Approved",
-    "akkoord": "Approved",
-    "weigering": "Rejected"
+    "in behandeling": "Processing 📝",
+    "aanvullende documenten": "Additional documents required 📎",
+    "aanvaarding": "Approved ✅",
+    "akkoord": "Approved ✅",
+    "weigering": "Rejected ❌"
 }
 
 # Define the dictionary for encoding status
