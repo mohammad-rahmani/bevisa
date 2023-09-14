@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 import random
 import time
 from datetime import datetime
+import pytz
 from unidecode import unidecode
 import re
 
@@ -16,6 +17,9 @@ SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 TOKEN_PATH = os.path.join(SCRIPT_DIRECTORY, "bot-token.txt")
 DB_PATH = os.path.join(SCRIPT_DIRECTORY, "data.db")
 MAX_CASES = 4
+
+# Specify the timezone
+bru_timezone = pytz.timezone("Europe/Brussels")
 
 # Define the dictionary for translations
 status_translations = {
@@ -409,7 +413,7 @@ def remove(update: Update, context: CallbackContext) -> None:
         update.message.reply_text(f"'{word_to_remove}' was not found in your dictionary.")
 
 def add_header_and_footer(header: str, body: str, footer: str = '') -> str:
-    current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    current_time = datetime.now(bru_timezone).strftime("%d/%m/%Y %H:%M:%S")
     time_str = escape_markdownv2_special_chars(f"Retrieved on: {current_time}")
     footer = footer if footer else time_str
 
