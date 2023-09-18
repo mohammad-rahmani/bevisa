@@ -463,7 +463,7 @@ def callback_query_handler(update: Update, context: CallbackContext) -> None:
     edit_with_reply_markup(update, new_answer, encoded_data)
 
 def build_reply_markup(encoded_data: str) -> InlineKeyboardMarkup:
-    detail_button = InlineKeyboardButton("Details", callback_data=f"\x00{encoded_data}")
+    detail_button = InlineKeyboardButton("🔍", callback_data=f"\x00{encoded_data}")
     refresh_button = InlineKeyboardButton("🔄", callback_data=f"\x01")
 
     markup_first_line = []
