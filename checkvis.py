@@ -1,5 +1,5 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext,CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 import os
 import sqlite3
 import logging
@@ -142,8 +142,8 @@ def get_bot_token():
         logger.error(f"An error occurred: {str(e)}")
     return None
 
-def start(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text("Welcome to the Belgian Visa Check bot! Please send me a case number or use commands from the menu.")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text("Welcome to the Belgian Visa Check bot! Please send me a case number or use commands from the menu.")
 
 def date_string_to_bytearray(date_str):
     # Parse the date string into a datetime object
@@ -354,24 +354,24 @@ def analyze_case(case_number: int) -> (str, str):
 
     return brief_answer, encoded_answer
 
-def define(update: Update, context: CallbackContext) -> None:
+async def define(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = context.args
 
     # Check usage
     if len(args) != 2:
-        update.message.reply_text("Usage: /define <word> <case_number>")
+        await update.message.reply_text("Usage: /define <word> <case_number>")
         return
 
     word, case_number = args[0], to_english_digits(args[1])
 
     # Check if the word starts with an alphabetic character
     if not word[0].isalpha():
-        update.message.reply_text("The word should start with an alphabetic character.")
+        await update.message.reply_text("The word should start with an alphabetic character.")
         return
 
     # Check if case_number contains only digits
     if not case_number.isdigit():
-        update.message.reply_text("The case number should contain only digits.")
+        await update.message.reply_text("The case number should contain only digits.")
         return
 
     # Check if maximum number of saved cases for the user has reached
@@ -379,26 +379,26 @@ def define(update: Update, context: CallbackContext) -> None:
     cases = get_user_word_case_pairs(user_id)
     num_cases = len(cases)
     if num_cases >= MAX_CASES:
-        update.message.reply_text(f"Maximum number of cases reached. Consider removing ones you don't need first.")
+        await update.message.reply_text(f"Maximum number of cases reached. Consider removing ones you don't need first.")
         return
 
     if write_to_db(user_id, word, case_number):
-        update.message.reply_text(f"Learned: {word} => {case_number}")
+        await update.message.reply_text(f"Learned: {word} => {case_number}")
 
-def remove(update: Update, context: CallbackContext) -> None:
+async def remove(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.message.from_user.id
     args = context.args
 
     # Check usage
     if len(args) != 1:
-        update.message.reply_text("Usage: /remove <word>")
+        await update.message.reply_text("Usage: /remove <word>")
         return
 
     word_to_remove = args[0]
 
     # Check if the word starts with an alphabetic character
     if not word_to_remove[0].isalpha():
-        update.message.reply_text("The word should start with an alphabetic character.")
+        await update.message.reply_text("The word should start with an alphabetic character.")
         return
 
     # Check if the word exists in the database for the user
@@ -406,11 +406,11 @@ def remove(update: Update, context: CallbackContext) -> None:
 
     if current_word:
         if remove_from_db(user_id, word_to_remove):
-            update.message.reply_text(f"'{word_to_remove}' was removed from your dictionary.")
+            await update.message.reply_text(f"'{word_to_remove}' was removed from your dictionary.")
         else:
-            update.message.reply_text(f"Could not remove '{word_to_remove}' from your dictionary.")
+            await update.message.reply_text(f"Could not remove '{word_to_remove}' from your dictionary.")
     else:
-        update.message.reply_text(f"'{word_to_remove}' was not found in your dictionary.")
+        await update.message.reply_text(f"'{word_to_remove}' was not found in your dictionary.")
 
 def add_header_and_footer(header: str, body: str, footer: str = '') -> str:
     current_time = datetime.now(bru_timezone).strftime("%d/%m/%Y %H:%M:%S")
@@ -419,7 +419,7 @@ def add_header_and_footer(header: str, body: str, footer: str = '') -> str:
 
     return f"{header}\n{body}\n{footer}"
 
-def refresh_case(query: Update.callback_query, context: CallbackContext) -> (str,str):
+async def refresh_case(query: Update.callback_query, context: ContextTypes.DEFAULT_TYPE) -> (str,str):
     current_answer = query.message.text
     header = escape_markdownv2_special_chars(current_answer.splitlines()[0])
     case_number = re.sub(r'\D', '', header)
@@ -429,7 +429,7 @@ def refresh_case(query: Update.callback_query, context: CallbackContext) -> (str
     
     return (answer, encoded_result)
 
-def toggle_answer(query: Update.callback_query, context: CallbackContext) -> (str,str):
+async def toggle_answer(query: Update.callback_query, context: ContextTypes.DEFAULT_TYPE) -> (str,str):
     current_answer = query.message.text
     footer = escape_markdownv2_special_chars(current_answer.splitlines()[-1])
     header = escape_markdownv2_special_chars(current_answer.splitlines()[0])
@@ -448,19 +448,19 @@ def toggle_answer(query: Update.callback_query, context: CallbackContext) -> (st
 
     return (new_answer, encoded_data)
 
-def callback_query_handler(update: Update, context: CallbackContext) -> None:
+async def callback_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    query.answer()
+    await query.answer()
 
     current_message = escape_markdownv2_special_chars(query.message.text)
     pressed_button = query.data[0]
     if pressed_button == '\x00':
-        new_answer, encoded_data = toggle_answer(query, context)
+        new_answer, encoded_data = await toggle_answer(query, context)
     elif pressed_button == '\x01':
-        query.edit_message_text(text=f'||{current_message}||', parse_mode="MarkdownV2")
-        new_answer, encoded_data = refresh_case(query, context)
+        await query.edit_message_text(text=f'||{current_message}||', parse_mode="MarkdownV2")
+        new_answer, encoded_data = await refresh_case(query, context)
 
-    edit_with_reply_markup(update, new_answer, encoded_data)
+    await edit_with_reply_markup(update, new_answer, encoded_data)
 
 def build_reply_markup(encoded_data: str) -> InlineKeyboardMarkup:
     detail_button = InlineKeyboardButton("🔍", callback_data=f"\x00{encoded_data}")
@@ -474,19 +474,19 @@ def build_reply_markup(encoded_data: str) -> InlineKeyboardMarkup:
     keyboard = [markup_first_line]
     return InlineKeyboardMarkup(keyboard)
 
-def respond_with_reply_markup(update: Update, answer: str, encoded_data: str):
+async def respond_with_reply_markup(update: Update, answer: str, encoded_data: str):
     reply_markup = build_reply_markup(encoded_data)
 
-    update.message.reply_text(text=answer, reply_markup=reply_markup, parse_mode="MarkdownV2")
+    await update.message.reply_text(text=answer, reply_markup=reply_markup, parse_mode="MarkdownV2")
 
-def edit_with_reply_markup(update: Update, new_answer: str, encoded_data: str):
+async def edit_with_reply_markup(update: Update, new_answer: str, encoded_data: str):
     query = update.callback_query
 
     reply_markup = build_reply_markup(encoded_data)
 
-    query.edit_message_text(text=new_answer, reply_markup=reply_markup, parse_mode="MarkdownV2")
+    await query.edit_message_text(text=new_answer, reply_markup=reply_markup, parse_mode="MarkdownV2")
 
-def retrieve_all_states(update: Update, context: CallbackContext) -> None:
+async def retrieve_all_states(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.message.from_user.id
     cases = get_user_word_case_pairs(user_id)
 
@@ -495,30 +495,30 @@ def retrieve_all_states(update: Update, context: CallbackContext) -> None:
         if case_number:
             brief_result, encoded_result = analyze_case(case_number)
             answer = add_header_and_footer(f"{word} \({case_number}\)", brief_result)
-            respond_with_reply_markup(update, answer, encoded_result)
-            time.sleep(random.uniform(0.2, 1.2))
+            await respond_with_reply_markup(update, answer, encoded_result)
+            await asyncio.sleep(random.uniform(0.2, 1.2))
 
-def get_association(update: Update, word: str) -> None:
+async def get_association(update: Update, word: str) -> None:
     user_id = update.message.from_user.id
     case_number = read_from_db(user_id, word)
 
     if case_number:
         brief_result, encoded_result = analyze_case(case_number)
         answer = add_header_and_footer(f"{word} \({case_number}\)", brief_result)
-        respond_with_reply_markup(update, answer, encoded_result)
+        await respond_with_reply_markup(update, answer, encoded_result)
     else:
-        update.message.reply_text(f"No association found for '{word}'")
+        await update.message.reply_text(f"No association found for '{word}'")
 
-def check_message(update: Update, context: CallbackContext) -> None:
+async def check_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg_text = update.message.text.strip()
 
     if msg_text.isdigit():
         case_number = to_english_digits(msg_text)
         brief_result, encoded_result = analyze_case(case_number)
         answer = add_header_and_footer(str(case_number), brief_result)
-        respond_with_reply_markup(update, answer, encoded_result)
+        await respond_with_reply_markup(update, answer, encoded_result)
     else:
-        get_association(update=update, word=msg_text)
+        await get_association(update=update, word=msg_text)
 
 def main():
     bot_token = get_bot_token()
@@ -526,18 +526,17 @@ def main():
         logger.error("Bot token not found. Exiting.")
         return
 
-    updater = Updater(bot_token, use_context=True)
-    dp = updater.dispatcher
+    application = Application.builder().token(bot_token).build()
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("define", define, pass_args=True))
-    dp.add_handler(CommandHandler("remove", remove, pass_args=True))
-    dp.add_handler(CommandHandler("all", retrieve_all_states))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, check_message))
-    dp.add_handler(CallbackQueryHandler(callback_query_handler))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("define", define))
+    application.add_handler(CommandHandler("remove", remove))
+    application.add_handler(CommandHandler("all", retrieve_all_states))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_message))
+    application.add_handler(CallbackQueryHandler(callback_query_handler))
 
-    updater.start_polling()
-    updater.idle()
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
+
