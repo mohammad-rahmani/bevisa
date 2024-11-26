@@ -27,7 +27,8 @@ status_translations = {
     "aanvullende documenten": "Additional documents required 📎",
     "aanvaarding": "Approved ✅",
     "akkoord": "Approved ✅",
-    "weigering": "Rejected ❌"
+    "weigering": "Rejected ❌",
+    "toekenning visum op voorlegging bijkomende stukken.": "Visa granted upon submission of additional documents 📎",
 }
 
 # Define the dictionary for encoding status
@@ -36,7 +37,8 @@ status_codes = {
     "aanvullende documenten": 2,
     "aanvaarding": 3,
     "akkoord": 4,
-    "weigering": 5
+    "weigering": 5,
+    "toekenning visum op voorlegging bijkomende stukken.": 6,
 }
 
 row_titles = [
